@@ -8,6 +8,9 @@ from redis import Redis
 import json
 import re
 from fastapi import BackgroundTasks
+from dotenv import load_dotenv
+import os
+load_dotenv()
 
 app = FastAPI()
 app.add_middleware(
@@ -18,8 +21,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-redis = Redis.from_url(
-    "redis://default:8tsTMWeUZNGI2FutCPKJd9aVJUVGtz9g@redis-12696.c80.us-east-1-2.ec2.redns.redis-cloud.com:12696")
+
+redis_url = os.getenv("REDIS_URL")
+
+redis = Redis.from_url(redis_url)
 
 
 class CoinRequest(BaseModel):
