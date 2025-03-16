@@ -1,20 +1,17 @@
-from fastapi.responses import JSONResponse
-from demo import save_current_data, find_new_status_events, get_emails
-from webdriver_manager.chrome import ChromeDriverManager
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.common.by import By
-from selenium import webdriver
-from email.mime.text import MIMEText
-import smtplib
-from fastapi.responses import HTMLResponse
-from fastapi.middleware.cors import CORSMiddleware
-from bs4 import BeautifulSoup
-from fastapi import FastAPI, BackgroundTasks
-from dotenv import load_dotenv
 import os
+import smtplib
+from dotenv import load_dotenv
+from email.mime.text import MIMEText
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from webdriver_manager.chrome import ChromeDriverManager
+from bs4 import BeautifulSoup
+
+from demo import save_current_data, find_new_status_events, get_emails
 
 # Load environment variables from the .env file
 load_dotenv()
@@ -25,16 +22,17 @@ username = os.getenv('EMAIL_USER')
 password = os.getenv('EMAIL_PASS')
 
 
-def create_driver():
-    options = Options()
-    options.add_argument('--headless')
-    options.add_argument('--no-sandbox')
-    options.add_argument('--disable-dev-shm-usage')
-    return webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+options = Options()
+options.add_argument('--headless')
+options.add_argument('--no-sandbox')
+options.add_argument('--disable-dev-shm-usage')
+
+driver = webdriver.Chrome(service=Service(
+    ChromeDriverManager().install()), options=options)
 
 
 def mail_alert():
-    driver = create_driver()
+
     try:
         url = 'https://shop.royalchallengers.com/ticket'
         driver.get(url)
@@ -46,25 +44,35 @@ def mail_alert():
         # Parse the loaded page with BeautifulSoup
         soup = BeautifulSoup(driver.page_source, 'html.parser')
         new_events = []
+
+        # Find all event blocks dynamically
         event_blocks = soup.find_all('div', class_='css-q38j1a')
 
         for block in event_blocks:
+            # Extract Date
             date_div = block.find('div', class_='css-b2t39r')
             date = date_div.find('p').get_text(
                 strip=True) if date_div and date_div.find('p') else 'N/A'
 
-            teams = [team_div.get_text(strip=True) for team_div in block.find_all(
-                'p', class_='chakra-text css-10rvbm3')]
+            # Extract Teams
+            teams = []
+            team_divs = block.find_all('p', class_='chakra-text css-10rvbm3')
+            for team_div in team_divs:
+                teams.append(team_div.get_text(strip=True))
+
+            # Handle special single-team events (like RCB UNBOX)
             if not teams:
                 special_event = block.find(
                     'p', class_='chakra-text css-vahgqk')
                 if special_event:
                     teams.append(special_event.get_text(strip=True))
 
+            # Extract Status
             status_button = block.find('button')
             status = status_button.get_text(
                 strip=True) if status_button else 'N/A'
 
+            # Compile event info
             event_info = {
                 "date": date,
                 "teams": teams if teams else ["N/A"],
@@ -182,6 +190,7 @@ def mail_alert():
         else:
             print("✅ No new ticket sales detected.")
 
+        # Save the updated data
         save_current_data(new_events)
 
     except Exception as e:
@@ -189,19 +198,3 @@ def mail_alert():
 
     finally:
         driver.quit()
-
-
-app = FastAPI()
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-
-@app.get("/", response_class=JSONResponse)
-async def root(background_tasks: BackgroundTasks):
-    background_tasks.add_task(mail_alert)
-    return {"message": "✅ Mail alert task started!"}
